@@ -5,7 +5,7 @@ from telegram import Update, InputMediaPhoto, InputMediaVideo
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
 # ---------------- CONFIG ---------------- #
-BOT_TOKEN = "8428346557:AAFmx-G_AqGkzsvkFsoevilY_AXZnFDvGXg"
+BOT_TOKEN = "8428346557:AAEbzajXkhs1fCZV784J_eq7IMypIbuSbqU"
 AUTHORIZED_USER_ID = 7675369659  # <-- replace with your Telegram user ID
 GROUPS_FILE = "id.txt"
 
@@ -59,6 +59,10 @@ async def listgroups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @restricted
 async def fw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Auto-save the group when using /fw
+    if update.effective_chat.type in ["group", "supergroup"]:
+        save_group(update.effective_chat.id)
+
     await update.message.reply_text("📤 Forward me the message you want to send to all groups.")
     context.user_data["waiting_forward"] = True
 
@@ -70,34 +74,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_chat.type in ["group", "supergroup"]:
             save_group(update.effective_chat.id)
 
-        # Only forward if /fw command was issued
+        # Check if we're waiting for a forward
         if context.user_data.get("waiting_forward"):
             groups = load_groups()
             sent_count = 0
 
+            # Handle media albums
             if update.message.media_group_id:
-                # Album handling
-                album_messages = context.chat_data.get(update.message.media_group_id, [])
-                album_messages.append(update.message)
-                context.chat_data[update.message.media_group_id] = album_messages
+                media_group = []
+                for m in update.message.effective_attachment or [update.message]:
+                    if m.photo:
+                        media_group.append(InputMediaPhoto(media=m.photo[-1].file_id))
+                    elif m.video:
+                        media_group.append(InputMediaVideo(media=m.video.file_id))
 
-                # Only forward once per album
-                if update.message.media_group_id not in context.user_data.get("album_forwarded", []):
-                    media = []
-                    for msg in album_messages:
-                        if msg.photo:
-                            media.append(InputMediaPhoto(media=msg.photo[-1].file_id, caption=msg.caption or ""))
-                        elif msg.video:
-                            media.append(InputMediaVideo(media=msg.video.file_id, caption=msg.caption or ""))
-                    for group_id in groups:
-                        try:
-                            await context.bot.send_media_group(chat_id=group_id, media=media)
-                            sent_count += 1
-                        except Exception as e:
-                            logger.warning(f"Failed to send album to {group_id}: {e}")
-                    context.user_data.setdefault("album_forwarded", []).append(update.message.media_group_id)
+                for group_id in groups:
+                    try:
+                        await context.bot.send_media_group(chat_id=group_id, media=media_group)
+                        sent_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to send album to {group_id}: {e}")
             else:
-                # Single message
+                # Single message forwarding
                 for group_id in groups:
                     try:
                         await context.bot.copy_message(
