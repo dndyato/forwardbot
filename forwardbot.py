@@ -1,11 +1,11 @@
 import os
 import logging
 import traceback
-from telegram import Update
+from telegram import Update, InputMediaPhoto, InputMediaVideo
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
 # ---------------- CONFIG ---------------- #
-BOT_TOKEN = "8277893901:AAFrdqwPU1e2FPeU4WhyMVZUC9nkBCq2uko"
+BOT_TOKEN = "8428346557:AAHEO5dvxPs3SD0KPC73zl1Y6j8kyU_ad48"
 AUTHORIZED_USER_ID = 7675369659  # <-- replace with your Telegram user ID
 GROUPS_FILE = "id.txt"
 
@@ -63,7 +63,6 @@ async def fw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["waiting_forward"] = True
 
 # ---------------- MESSAGE HANDLER ---------------- #
-@restricted
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Save group if message is in a group
@@ -74,16 +73,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.user_data.get("waiting_forward"):
             groups = load_groups()
             sent_count = 0
-            for group_id in groups:
-                try:
-                    await context.bot.copy_message(
-                        chat_id=group_id,
-                        from_chat_id=update.effective_chat.id,
-                        message_id=update.message.message_id
-                    )
-                    sent_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to send to {group_id}: {e}")
+
+            # Handle album/media groups
+            if update.message.media_group_id:
+                # Fetch all messages in the album
+                album = await context.bot.get_media_group(update.effective_chat.id, update.message.media_group_id)
+                for group_id in groups:
+                    try:
+                        await context.bot.send_media_group(chat_id=group_id, media=album)
+                        sent_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to send album to {group_id}: {e}")
+            else:
+                # Single message
+                for group_id in groups:
+                    try:
+                        await context.bot.copy_message(
+                            chat_id=group_id,
+                            from_chat_id=update.effective_chat.id,
+                            message_id=update.message.message_id
+                        )
+                        sent_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to send to {group_id}: {e}")
+
             await update.message.reply_text(f"Forwarded to {sent_count} groups ✔")
             context.user_data["waiting_forward"] = False
     except Exception as e:
