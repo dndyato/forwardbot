@@ -1,10 +1,8 @@
 import os
 import logging
 import traceback
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-)
+from telegram import Update, InputMediaPhoto, InputMediaVideo, InputMediaDocument
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
 # ---------------- CONFIG ---------------- #
 BOT_TOKEN = "8428346557:AAG59ZF52Cxvi49Ri3zvCY5HwqHUXV8TwaY"
@@ -32,10 +30,8 @@ def save_group(group_id):
             f.write(f"{group_id}\n")
 
 def load_groups():
-    with open(GROUPS_FILE, "r") as f:
-        return [int(line.strip()) for line in f.readlines() if line.strip()]
+    return [int(line.strip()) for line in open(GROUPS_FILE, "r") if line.strip()]
 
-# Restrict commands to your user ID
 def restricted(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -48,9 +44,7 @@ def restricted(func):
 # ---------------- COMMANDS ---------------- #
 @restricted
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "✅ Bot is active! Use /fw to forward a message to all groups."
-    )
+    await update.message.reply_text("✅ Bot is active! Use /fw to forward a message to all groups.")
 
 @restricted
 async def listgroups(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -58,7 +52,7 @@ async def listgroups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not groups:
         await update.message.reply_text("No groups saved yet.")
         return
-    text = "📌 Saved Groups:\n\n" + "\n".join([f"- {g} — Unknown Title" for g in groups])
+    text = "📌 Saved Groups:\n\n" + "\n".join([f"- {g}" for g in groups])
     await update.message.reply_text(text)
 
 @restricted
@@ -70,56 +64,53 @@ async def fw(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @restricted
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Save group if message is in a group
         if update.effective_chat.type in ["group", "supergroup"]:
             save_group(update.effective_chat.id)
 
-        groups = load_groups()
-        sent_count = 0
+        if context.user_data.get("waiting_forward"):
+            groups = load_groups()
+            sent_count = 0
 
-        # Handle media group (album)
-        if update.message.media_group_id:
-            # Store messages by media_group_id
-            context.bot_data.setdefault(update.message.media_group_id, []).append(update.message)
+            # Check for media group
+            if update.message.media_group_id:
+                # Store media_group messages temporarily
+                media_group = context.bot_data.setdefault(update.message.media_group_id, [])
+                media_group.append(update.message)
 
-            # Only forward when the last message in the group arrives
-            # Telegram doesn't provide a "last" flag, so forward after a short delay
-            # For simplicity, we forward on each message (duplicates won't break)
-            media_group = []
-            for m in context.bot_data[update.message.media_group_id]:
-                if m.photo:
-                    media_group.append({"type": "photo", "media": m.photo[-1].file_id})
-                elif m.video:
-                    media_group.append({"type": "video", "media": m.video.file_id})
-                elif m.document:
-                    media_group.append({"type": "document", "media": m.document.file_id})
+                # If it's the last message of the group, send it
+                if len(media_group) > 0:
+                    for group_id in groups:
+                        try:
+                            media_list = []
+                            for m in media_group:
+                                if m.photo:
+                                    media_list.append(InputMediaPhoto(m.photo[-1].file_id))
+                                elif m.video:
+                                    media_list.append(InputMediaVideo(m.video.file_id))
+                                elif m.document:
+                                    media_list.append(InputMediaDocument(m.document.file_id))
+                            if media_list:
+                                await context.bot.send_media_group(chat_id=group_id, media=media_list)
+                            sent_count += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to send to {group_id}: {e}")
+                    # Clear stored media group
+                    context.bot_data.pop(update.message.media_group_id, None)
+            else:
+                # Single message
+                for group_id in groups:
+                    try:
+                        await context.bot.copy_message(
+                            chat_id=group_id,
+                            from_chat_id=update.effective_chat.id,
+                            message_id=update.message.message_id
+                        )
+                        sent_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to send to {group_id}: {e}")
 
-            for group_id in groups:
-                try:
-                    await context.bot.send_media_group(chat_id=group_id, media=media_group)
-                    sent_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to send to {group_id}: {e}")
-
-            # Clear stored media group after sending
-            context.bot_data[update.message.media_group_id] = []
-
-        # Handle single messages
-        elif context.user_data.get("waiting_forward"):
-            for group_id in groups:
-                try:
-                    await context.bot.copy_message(
-                        chat_id=group_id,
-                        from_chat_id=update.effective_chat.id,
-                        message_id=update.message.message_id
-                    )
-                    sent_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to send to {group_id}: {e}")
-            context.user_data["waiting_forward"] = False
-
-        if sent_count:
             await update.message.reply_text(f"Forwarded to {sent_count} groups ✔")
+            context.user_data["waiting_forward"] = False
 
     except Exception as e:
         logger.error(f"Error in handle_message: {e}")
@@ -130,14 +121,14 @@ async def main():
     try:
         app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-        # Add handlers
+        # Handlers
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("listgroups", listgroups))
         app.add_handler(CommandHandler("fw", fw))
         app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
 
         logger.info("Bot started...")
-        await app.run_polling()
+        await app.run_polling(poll_interval=1)
     except Exception as e:
         logger.critical(f"Bot crashed: {e}")
         traceback.print_exc()
@@ -145,7 +136,7 @@ async def main():
 # ---------------- RUN ---------------- #
 if __name__ == "__main__":
     import nest_asyncio
-    import asyncio
+    nest_asyncio.apply()
 
-    nest_asyncio.apply()  # fix "event loop already running" on Railway
+    import asyncio
     asyncio.get_event_loop().run_until_complete(main())
