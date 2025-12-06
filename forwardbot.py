@@ -5,7 +5,7 @@ from telegram import Update, InputMediaPhoto, InputMediaVideo
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
 # ---------------- CONFIG ---------------- #
-BOT_TOKEN = "8428346557:AAHEO5dvxPs3SD0KPC73zl1Y6j8kyU_ad48"
+BOT_TOKEN = "8428346557:AAFmx-G_AqGkzsvkFsoevilY_AXZnFDvGXg"
 AUTHORIZED_USER_ID = 7675369659  # <-- replace with your Telegram user ID
 GROUPS_FILE = "id.txt"
 
@@ -63,27 +63,39 @@ async def fw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["waiting_forward"] = True
 
 # ---------------- MESSAGE HANDLER ---------------- #
+@restricted
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Save group if message is in a group
         if update.effective_chat.type in ["group", "supergroup"]:
             save_group(update.effective_chat.id)
 
-        # Check if we're waiting for a forward
+        # Only forward if /fw command was issued
         if context.user_data.get("waiting_forward"):
             groups = load_groups()
             sent_count = 0
 
-            # Handle album/media groups
             if update.message.media_group_id:
-                # Fetch all messages in the album
-                album = await context.bot.get_media_group(update.effective_chat.id, update.message.media_group_id)
-                for group_id in groups:
-                    try:
-                        await context.bot.send_media_group(chat_id=group_id, media=album)
-                        sent_count += 1
-                    except Exception as e:
-                        logger.warning(f"Failed to send album to {group_id}: {e}")
+                # Album handling
+                album_messages = context.chat_data.get(update.message.media_group_id, [])
+                album_messages.append(update.message)
+                context.chat_data[update.message.media_group_id] = album_messages
+
+                # Only forward once per album
+                if update.message.media_group_id not in context.user_data.get("album_forwarded", []):
+                    media = []
+                    for msg in album_messages:
+                        if msg.photo:
+                            media.append(InputMediaPhoto(media=msg.photo[-1].file_id, caption=msg.caption or ""))
+                        elif msg.video:
+                            media.append(InputMediaVideo(media=msg.video.file_id, caption=msg.caption or ""))
+                    for group_id in groups:
+                        try:
+                            await context.bot.send_media_group(chat_id=group_id, media=media)
+                            sent_count += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to send album to {group_id}: {e}")
+                    context.user_data.setdefault("album_forwarded", []).append(update.message.media_group_id)
             else:
                 # Single message
                 for group_id in groups:
@@ -99,6 +111,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_text(f"Forwarded to {sent_count} groups ✔")
             context.user_data["waiting_forward"] = False
+
     except Exception as e:
         logger.error(f"Error in handle_message: {e}")
         traceback.print_exc()
