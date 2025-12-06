@@ -98,7 +98,6 @@ async def fw(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @restricted
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Check if we're waiting for a forward
         if context.user_data.get("waiting_forward"):
             groups = load_groups()
             if not groups:
@@ -107,20 +106,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             sent_count = 0
-            for group_id in groups:
-                try:
-                    # Forward any type of message
-                    await context.bot.copy_message(
-                        chat_id=group_id,
-                        from_chat_id=update.effective_chat.id,
-                        message_id=update.message.message_id
-                    )
-                    sent_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to send to {group_id}: {e}")
 
-            await update.message.reply_text(f"Forwarded to {sent_count} groups ✔")
+            # Handle media groups (albums)
+            if update.message.media_group_id:
+                mgid = update.message.media_group_id
+                if "media_groups" not in context.user_data:
+                    context.user_data["media_groups"] = {}
+                context.user_data["media_groups"].setdefault(mgid, []).append(update.message)
+
+                for msg in context.user_data["media_groups"][mgid]:
+                    for group_id in groups:
+                        try:
+                            await context.bot.copy_message(
+                                chat_id=group_id,
+                                from_chat_id=msg.chat_id,
+                                message_id=msg.message_id
+                            )
+                            sent_count += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to send to {group_id}: {e}")
+
+                context.user_data["media_groups"].pop(mgid, None)
+
+            else:
+                # Forward single message
+                for group_id in groups:
+                    try:
+                        await context.bot.copy_message(
+                            chat_id=group_id,
+                            from_chat_id=update.effective_chat.id,
+                            message_id=update.message.message_id
+                        )
+                        sent_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to send to {group_id}: {e}")
+
+            await update.message.reply_text(f"Forwarded {sent_count} messages ✔")
             context.user_data["waiting_forward"] = False
+
     except Exception as e:
         logger.error(f"Error in handle_message: {e}")
         traceback.print_exc()
