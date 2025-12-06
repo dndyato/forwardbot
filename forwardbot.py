@@ -2,8 +2,8 @@ import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
-BOT_TOKEN = "8277893901:AAGfMTrjo7N3OHWpm62g9_SBTjRTR6oHVfM"
-AUTHORIZED_USER_ID = 7675369659  # <-- replace with your Telegram user ID
+BOT_TOKEN = "8277893901:AAFrdqwPU1e2FPeU4WhyMVZUC9nkBCq2uko"
+AUTHORIZED_USER_ID = 7675369659
 GROUPS_FILE = "id.txt"
 
 # Ensure groups file exists
@@ -11,7 +11,9 @@ if not os.path.exists(GROUPS_FILE):
     with open(GROUPS_FILE, "w") as f:
         pass
 
+# -----------------------------
 # Helper functions
+# -----------------------------
 def save_group(group_id):
     with open(GROUPS_FILE, "r") as f:
         groups = [line.strip() for line in f.readlines()]
@@ -23,7 +25,9 @@ def load_groups():
     with open(GROUPS_FILE, "r") as f:
         return [int(line.strip()) for line in f.readlines() if line.strip()]
 
-# Decorator to restrict commands to only your user ID
+# -----------------------------
+# Restrict access
+# -----------------------------
 def restricted(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -33,7 +37,9 @@ def restricted(func):
         return await func(update, context)
     return wrapper
 
+# -----------------------------
 # Commands
+# -----------------------------
 @restricted
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Bot is active! Use /fw to forward a message to all groups.")
@@ -47,20 +53,19 @@ async def listgroups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "📌 Saved Groups:\n\n" + "\n".join([f"- {g} — Unknown Title" for g in groups])
     await update.message.reply_text(text)
 
-# /fw command: initiates forwarding
 @restricted
 async def fw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📤 Forward me the message you want to send to all groups.")
     context.user_data["waiting_forward"] = True
 
-# Handle forwarded message
+# -----------------------------
+# Handle forwarded messages
+# -----------------------------
 @restricted
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Save group if message is in a group
     if update.effective_chat.type in ["group", "supergroup"]:
         save_group(update.effective_chat.id)
 
-    # Check if we're waiting for a forward
     if context.user_data.get("waiting_forward"):
         groups = load_groups()
         sent_count = 0
@@ -77,19 +82,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Forwarded to {sent_count} groups ✔")
         context.user_data["waiting_forward"] = False
 
+# -----------------------------
+# Main
+# -----------------------------
 async def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("listgroups", listgroups))
     app.add_handler(CommandHandler("fw", fw))
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
 
     print("Bot started...")
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.wait_closed()
+    await app.run_polling()
 
 if __name__ == "__main__":
     import asyncio
