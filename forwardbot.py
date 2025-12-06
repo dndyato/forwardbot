@@ -6,7 +6,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, Messa
 
 # ---------------- CONFIG ---------------- #
 BOT_TOKEN = "8428346557:AAEbzajXkhs1fCZV784J_eq7IMypIbuSbqU"
-AUTHORIZED_USER_ID = 7675369659  # <-- replace with your Telegram user ID
+AUTHORIZED_USER_ID = 7675369659  # <-- your Telegram ID
 GROUPS_FILE = "id.txt"
 
 # Ensure groups file exists
@@ -33,7 +33,7 @@ def load_groups():
     with open(GROUPS_FILE, "r") as f:
         return [int(line.strip()) for line in f.readlines() if line.strip()]
 
-# Decorator to restrict commands to only your user ID
+# Restrict commands to your Telegram ID
 def restricted(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -59,10 +59,6 @@ async def listgroups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @restricted
 async def fw(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Auto-save the group when using /fw
-    if update.effective_chat.type in ["group", "supergroup"]:
-        save_group(update.effective_chat.id)
-
     await update.message.reply_text("📤 Forward me the message you want to send to all groups.")
     context.user_data["waiting_forward"] = True
 
@@ -74,7 +70,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_chat.type in ["group", "supergroup"]:
             save_group(update.effective_chat.id)
 
-        # Check if we're waiting for a forward
         if context.user_data.get("waiting_forward"):
             groups = load_groups()
             sent_count = 0
@@ -82,11 +77,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Handle media albums
             if update.message.media_group_id:
                 media_group = []
-                for m in update.message.effective_attachment or [update.message]:
-                    if m.photo:
-                        media_group.append(InputMediaPhoto(media=m.photo[-1].file_id))
-                    elif m.video:
-                        media_group.append(InputMediaVideo(media=m.video.file_id))
+
+                # Photos
+                if update.message.photo:
+                    media_group.append(InputMediaPhoto(media=update.message.photo[-1].file_id))
+
+                # Videos
+                if update.message.video:
+                    media_group.append(InputMediaVideo(media=update.message.video.file_id))
 
                 for group_id in groups:
                     try:
@@ -94,6 +92,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         sent_count += 1
                     except Exception as e:
                         logger.warning(f"Failed to send album to {group_id}: {e}")
+
             else:
                 # Single message forwarding
                 for group_id in groups:
@@ -134,7 +133,7 @@ async def main():
 # ---------------- RUN ---------------- #
 if __name__ == "__main__":
     import nest_asyncio
-    nest_asyncio.apply()  # fix "event loop already running" on Railway
+    nest_asyncio.apply()
 
     import asyncio
     asyncio.get_event_loop().run_until_complete(main())
