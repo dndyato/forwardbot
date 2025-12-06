@@ -7,7 +7,7 @@ from telegram.ext import (
 )
 
 ID_FILE = "id.txt"
-OWNER_ID = 8277893901        # <-- PUT YOUR TELEGRAM ID HERE
+OWNER_ID = 8277893901          # <-- PUT YOUR TELEGRAM ID HERE
 ASK_MESSAGE = 1
 
 
@@ -33,7 +33,7 @@ def save_group(group_id):
 
 
 # -----------------------------
-# HANDLER: Save group IDs
+# AUTO SAVE GROUPS
 # -----------------------------
 async def catch_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -45,7 +45,7 @@ async def catch_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # -----------------------------
-# /fw COMMAND (start)
+# /fw START
 # -----------------------------
 async def fw_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -57,13 +57,14 @@ async def fw_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # -----------------------------
-# Forward message to all groups
+# RECEIVE MESSAGE AND FORWARD
 # -----------------------------
 async def fw_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     groups = load_groups()
 
     sent = 0
+
     for gid in groups:
         try:
             await context.bot.copy_message(
@@ -75,12 +76,12 @@ async def fw_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    await update.message.reply_text(f"Forwarded to {sent} groups ✔")
+    await msg.reply_text(f"Forwarded to {sent} groups ✔")
     return ConversationHandler.END
 
 
 # -----------------------------
-# /listgroups COMMAND
+# /listgroups
 # -----------------------------
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -99,7 +100,7 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             chat = await context.bot.get_chat(gid)
             name = chat.title or "Unknown Title"
-        except:
+        except Exception:
             name = "Unknown Title"
 
         text += f"- `{gid}` — {name}\n"
@@ -108,12 +109,12 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # -----------------------------
-# MAIN APP (PTB v21+)
+# MAIN LOOP (PTB v21 STANDARD)
 # -----------------------------
 async def main():
     app = Application.builder().token("8277893901:AAGfMTrjo7N3OHWpm62g9_SBTjRTR6oHVfM").build()
 
-    # Forward conversation
+    # Conversation handler for /fw
     fw_handler = ConversationHandler(
         entry_points=[CommandHandler("fw", fw_start)],
         states={ASK_MESSAGE: [MessageHandler(filters.ALL, fw_receive)]},
@@ -124,27 +125,13 @@ async def main():
     app.add_handler(CommandHandler("listgroups", list_groups))
     app.add_handler(MessageHandler(filters.ALL, catch_groups))
 
-    # PTB v21+ required format
     async with app:
         await app.start()
         await app.updater.start_polling()
 
-        # Keep running forever
+        # Keeps bot running on Railway
         await asyncio.Event().wait()
 
 
-# Run bot
 if __name__ == "__main__":
     asyncio.run(main())
-    app.add_handler(fw_handler)
-    app.add_handler(CommandHandler("listgroups", list_groups))
-    app.add_handler(MessageHandler(filters.ALL, catch_groups))
-
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await app.idle()
-
-
-import asyncio
-asyncio.run(main())
