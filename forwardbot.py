@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
 # ---------------- CONFIG ---------------- #
-BOT_TOKEN = "8277893901:AAGfMTrjo7N3OHWpm62g9_SBTjRTR6oHVfM"
+BOT_TOKEN = "8277893901:AAFrdqwPU1e2FPeU4WhyMVZUC9nkBCq2uko"
 AUTHORIZED_USER_ID = 7675369659  # <-- replace with your Telegram user ID
 GROUPS_FILE = "id.txt"
 
