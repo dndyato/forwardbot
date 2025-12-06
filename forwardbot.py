@@ -7,7 +7,7 @@ from telegram.ext import (
 )
 
 ID_FILE = "id.txt"
-OWNER_ID = 8277893901          # <-- PUT YOUR TELEGRAM ID HERE
+OWNER_ID = 7675369659          # <-- PUT YOUR TELEGRAM ID HERE
 ASK_MESSAGE = 1
 
 
